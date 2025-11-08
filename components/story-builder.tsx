@@ -4,10 +4,16 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { Sparkles, Wand2, ImageIcon, Video, Loader2, RotateCcw, Save, Film } from "lucide-react"
+import { Sparkles, Wand2, ImageIcon, Video, Loader2, RotateCcw, Save, Film, Edit2, RefreshCw } from "lucide-react"
 import Image from "next/image"
 
-type Step = "input" | "story" | "storyboard" | "video" | "complete"
+type Step = "input" | "outline" | "storyboard" | "video" | "complete"
+
+interface StoryStep {
+  number: number
+  title: string
+  description: string
+}
 
 interface StoryBuilderProps {
   open: boolean
@@ -17,13 +23,13 @@ interface StoryBuilderProps {
 export function StoryBuilder({ open, onOpenChange }: StoryBuilderProps) {
   const [step, setStep] = useState<Step>("input")
   const [idea, setIdea] = useState("")
-  const [story, setStory] = useState("")
+  const [storySteps, setStorySteps] = useState<StoryStep[]>([])
+  const [selectedStepIndex, setSelectedStepIndex] = useState<number | null>(null)
+  const [editingText, setEditingText] = useState("")
   const [storyboardImages, setStoryboardImages] = useState<Array<{ url: string; caption: string }>>([])
   const [loading, setLoading] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState("")
   const [progress, setProgress] = useState(0)
-  const [displayedStory, setDisplayedStory] = useState("")
-  const [isTyping, setIsTyping] = useState(false)
 
   useEffect(() => {
     if (loading) {
@@ -40,45 +46,126 @@ export function StoryBuilder({ open, onOpenChange }: StoryBuilderProps) {
     }
   }, [loading])
 
-  useEffect(() => {
-    if (step === "story" && story && !isTyping) {
-      setIsTyping(true)
-      setDisplayedStory("")
-      let index = 0
-      const interval = setInterval(() => {
-        if (index < story.length) {
-          setDisplayedStory((prev) => prev + story[index])
-          index++
-        } else {
-          setIsTyping(false)
-          clearInterval(interval)
-        }
-      }, 20)
-      return () => clearInterval(interval)
-    }
-  }, [story, step, isTyping])
-
-  const handleGenerateStory = async () => {
+  const handleGenerateOutline = async () => {
     setLoading(true)
-    setLoadingMessage("Gemini is expanding your idea...")
+    setLoadingMessage("Gemini is creating your story outline...")
 
-    await new Promise((resolve) => setTimeout(resolve, 3500))
+    try {
+      const response = await fetch("/api/generate-outline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: idea }),
+      })
 
-    const generatedStory = `${idea}
+      if (!response.ok) throw new Error("Failed to generate outline")
 
-In a realm where imagination knows no bounds, this story unfolds...
+      const data = await response.json()
 
-Scene 1: The Beginning — The journey starts with a spark of curiosity, a moment that changes everything. The atmosphere is thick with possibility.
+      setStorySteps(data.steps)
+      setLoading(false)
+      setStep("outline")
+    } catch (error) {
+      console.error("[v0] Error generating outline:", error)
 
-Scene 2: The Discovery — As the protagonist delves deeper, they uncover something extraordinary. Colors dance, emotions flow, and the world transforms before their eyes.
+      await new Promise((resolve) => setTimeout(resolve, 3500))
 
-Scene 3: The Transformation — What began as a simple idea has blossomed into something profound. The final revelation brings everything together in a breathtaking crescendo.
+      const simulatedSteps: StoryStep[] = [
+        {
+          number: 1,
+          title: "The Awakening",
+          description: `${idea}\n\nOur story begins in an unexpected place. The protagonist discovers something that will change everything—a spark of curiosity that cannot be ignored.`,
+        },
+        {
+          number: 2,
+          title: "The Journey Begins",
+          description:
+            "With newfound purpose, the adventure truly starts. Challenges emerge, but so does determination. Every step forward reveals new wonders and obstacles.",
+        },
+        {
+          number: 3,
+          title: "The Great Challenge",
+          description:
+            "The most difficult moment arrives. Doubt creeps in, but resilience prevails. This is where true character is forged in the fires of adversity.",
+        },
+        {
+          number: 4,
+          title: "The Revelation",
+          description:
+            "Everything becomes clear. The pieces of the puzzle fall into place, revealing a truth that was hidden all along. Understanding dawns like a sunrise.",
+        },
+        {
+          number: 5,
+          title: "The Triumph",
+          description:
+            "The journey reaches its climax. All struggles, lessons, and growth culminate in a breathtaking finale. The story comes full circle, transformed and complete.",
+        },
+      ]
 
-This is your story, brought to life by the power of AI.`
+      setStorySteps(simulatedSteps)
+      setLoading(false)
+      setStep("outline")
+    }
+  }
 
-    setStory(generatedStory)
-    setLoading(false)
-    setStep("story")
+  const handleRegenerateStep = async (stepIndex: number) => {
+    setLoading(true)
+    setLoadingMessage(`Regenerating Step ${stepIndex + 1}...`)
+
+    try {
+      const response = await fetch("/api/regenerate-step", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: idea,
+          stepNumber: stepIndex + 1,
+          currentSteps: storySteps,
+        }),
+      })
+
+      if (!response.ok) throw new Error("Failed to regenerate step")
+
+      const data = await response.json()
+
+      const updatedSteps = [...storySteps]
+      updatedSteps[stepIndex] = data.step
+      setStorySteps(updatedSteps)
+      setEditingText(data.step.description)
+      setLoading(false)
+    } catch (error) {
+      console.error("[v0] Error regenerating step:", error)
+
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      const newDescriptions = [
+        "A fresh perspective emerges, revealing hidden depths in the story. The narrative takes an unexpected turn that captivates and intrigues.",
+        "The plot thickens with new developments. Characters face fresh challenges that test their resolve in surprising ways.",
+        "An alternative path unfolds, rich with possibility. The story evolves in directions previously unimagined.",
+        "New insights illuminate the journey. The narrative deepens, revealing layers of meaning and emotion.",
+        "The story transforms, taking on new dimensions. What seemed certain becomes fluid, dynamic, alive.",
+      ]
+
+      const updatedSteps = [...storySteps]
+      updatedSteps[stepIndex] = {
+        ...updatedSteps[stepIndex],
+        description: newDescriptions[stepIndex % newDescriptions.length],
+      }
+      setStorySteps(updatedSteps)
+      setEditingText(updatedSteps[stepIndex].description)
+      setLoading(false)
+    }
+  }
+
+  const handleSaveChanges = () => {
+    if (selectedStepIndex !== null) {
+      const updatedSteps = [...storySteps]
+      updatedSteps[selectedStepIndex].description = editingText
+      setStorySteps(updatedSteps)
+    }
+  }
+
+  const handleSelectStep = (index: number) => {
+    setSelectedStepIndex(index)
+    setEditingText(storySteps[index].description)
   }
 
   const handleGenerateStoryboard = async () => {
@@ -94,7 +181,7 @@ This is your story, brought to life by the power of AI.`
       },
       {
         url: "/robot-painting-first-brushstroke-with-cosmic-color.jpg",
-        caption: "Scene 2 — The Discovery",
+        caption: "Scene 2 — The Journey Begins",
       },
       {
         url: "/robot-creating-beautiful-galaxy-painting-in-space.jpg",
@@ -122,22 +209,21 @@ This is your story, brought to life by the power of AI.`
   }
 
   const handleSave = () => {
-    // Simulate saving to MongoDB
     setStep("complete")
   }
 
   const handleStartOver = () => {
     setStep("input")
     setIdea("")
-    setStory("")
-    setDisplayedStory("")
+    setStorySteps([])
+    setSelectedStepIndex(null)
+    setEditingText("")
     setStoryboardImages([])
-    setIsTyping(false)
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto border-white/20 bg-gradient-to-br from-[#5B4B8A]/95 via-[#7B5B8A]/95 to-[#8B6B9A]/95 text-white backdrop-blur-xl">
+      <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto border-white/20 bg-gradient-to-br from-[#5B4B8A]/95 via-[#7B5B8A]/95 to-[#8B6B9A]/95 text-white backdrop-blur-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3 text-3xl font-bold">
             <Sparkles className="h-8 w-8 text-red-400 animate-pulse" />
@@ -152,10 +238,10 @@ This is your story, brought to life by the power of AI.`
               <div>
                 <h3 className="mb-4 flex items-center gap-2 text-2xl font-bold">
                   <Sparkles className="h-6 w-6 text-red-400" />
-                  Start with an Idea
+                  Enter Your Story Idea
                 </h3>
                 <p className="mb-4 text-white/80">
-                  Enter your story idea and watch it come to life through AI-powered narrative, visuals, and video.
+                  Describe your story concept and let Gemini expand it into a complete narrative outline.
                 </p>
                 <Textarea
                   placeholder="Enter your story idea (e.g., 'A robot who learns to paint in space')"
@@ -165,7 +251,7 @@ This is your story, brought to life by the power of AI.`
                 />
               </div>
               <Button
-                onClick={handleGenerateStory}
+                onClick={handleGenerateOutline}
                 disabled={!idea.trim() || loading}
                 className="w-full bg-red-400 text-white hover:bg-red-500 hover:shadow-[0_0_20px_rgba(239,68,68,0.8)] transition-all duration-300"
               >
@@ -192,28 +278,90 @@ This is your story, brought to life by the power of AI.`
             </div>
           )}
 
-          {/* Step 2: Expanded Story */}
-          {step === "story" && (
+          {/* Step 2: Story Outline with Horizontal Cards */}
+          {step === "outline" && (
             <div className="space-y-6 animate-in fade-in duration-500">
               <div>
                 <h3 className="mb-4 flex items-center gap-2 text-2xl font-bold">
                   <Wand2 className="h-6 w-6 text-red-400 animate-pulse" />
-                  Your Expanded Story
+                  Your Story Outline
                 </h3>
-                <div className="rounded-xl border border-white/20 bg-white/10 p-6 backdrop-blur-sm">
-                  <div className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-red-300">
-                    <Sparkles className="h-4 w-4 animate-pulse" />
-                    Generated by Gemini 2.5 Flash
-                  </div>
-                  <p className="whitespace-pre-line leading-relaxed text-white/90">
-                    {displayedStory}
-                    {isTyping && <span className="animate-pulse">|</span>}
-                  </p>
+                <div className="mb-6 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-red-300">
+                  <Sparkles className="h-4 w-4 animate-pulse" />
+                  Generated by Gemini 2.5 Flash
                 </div>
+
+                <div className="mb-6 -mx-6 px-6 overflow-x-auto">
+                  <div className="flex gap-4 pb-4" style={{ minWidth: "max-content" }}>
+                    {storySteps.map((storyStep, index) => (
+                      <div
+                        key={index}
+                        onClick={() => handleSelectStep(index)}
+                        className={`group relative flex w-80 shrink-0 cursor-pointer flex-col rounded-xl border p-6 backdrop-blur-sm transition-all duration-300 ${
+                          selectedStepIndex === index
+                            ? "border-red-400 bg-red-400/20 shadow-[0_0_25px_rgba(239,68,68,0.6)]"
+                            : "border-white/20 bg-white/10 hover:border-red-400/50 hover:bg-white/15 hover:shadow-[0_0_15px_rgba(239,68,68,0.3)]"
+                        }`}
+                        style={{
+                          animation: `fadeIn 0.5s ease-out ${index * 0.1}s backwards`,
+                        }}
+                      >
+                        <div className="mb-3 flex items-center justify-between">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-red-400 to-red-600 text-lg font-bold shadow-[0_0_15px_rgba(239,68,68,0.5)]">
+                            {storyStep.number}
+                          </div>
+                          {selectedStepIndex === index && <Edit2 className="h-5 w-5 text-red-400 animate-pulse" />}
+                        </div>
+                        <h4 className="mb-2 text-xl font-bold text-white">{storyStep.title}</h4>
+                        <p className="line-clamp-3 text-sm leading-relaxed text-white/80">{storyStep.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedStepIndex !== null && (
+                  <div className="space-y-4 rounded-xl border border-red-400/50 bg-red-400/10 p-6 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="flex items-center justify-between">
+                      <h4 className="flex items-center gap-2 text-lg font-bold">
+                        <Edit2 className="h-5 w-5 text-red-400" />
+                        Editing Step {selectedStepIndex + 1}: {storySteps[selectedStepIndex].title}
+                      </h4>
+                    </div>
+                    <Textarea
+                      value={editingText}
+                      onChange={(e) => setEditingText(e.target.value)}
+                      className="min-h-[150px] resize-none border-white/20 bg-white/10 text-white placeholder:text-white/50 focus-visible:ring-red-400"
+                    />
+                    <div className="flex gap-3">
+                      <Button
+                        onClick={handleSaveChanges}
+                        disabled={loading}
+                        className="flex-1 bg-red-400 text-white hover:bg-red-500 transition-all duration-300"
+                      >
+                        <Save className="mr-2 h-4 w-4" />
+                        Save Changes
+                      </Button>
+                      <Button
+                        onClick={() => handleRegenerateStep(selectedStepIndex)}
+                        disabled={loading}
+                        variant="outline"
+                        className="flex-1 border-white/20 bg-white/10 text-white hover:bg-white/20 hover:border-red-400/50 transition-all duration-300"
+                      >
+                        {loading ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                        )}
+                        Regenerate Step
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
+
               <Button
                 onClick={handleGenerateStoryboard}
-                disabled={loading || isTyping}
+                disabled={loading}
                 className="w-full bg-red-400 text-white hover:bg-red-500 hover:shadow-[0_0_20px_rgba(239,68,68,0.8)] transition-all duration-300"
               >
                 {loading ? (
@@ -232,7 +380,7 @@ This is your story, brought to life by the power of AI.`
                 ) : (
                   <>
                     <ImageIcon className="mr-2 h-5 w-5" />
-                    Visualize Scenes with Imagen
+                    Continue to Image Generation
                   </>
                 )}
               </Button>
@@ -316,20 +464,17 @@ This is your story, brought to life by the power of AI.`
                 </div>
                 <div className="overflow-hidden rounded-xl border border-white/20 bg-white/5 transition-all duration-300 hover:border-red-400/50 hover:shadow-[0_0_30px_rgba(239,68,68,0.3)]">
                   <div className="group relative aspect-video w-full cursor-pointer bg-gradient-to-br from-purple-900/50 to-red-900/50">
-                    {/* Background image */}
                     <Image
                       src="/robot-creating-beautiful-galaxy-painting-in-space.jpg"
                       alt="Video preview"
                       fill
                       className="object-cover opacity-40 transition-opacity duration-500 group-hover:opacity-60"
                     />
-                    {/* Play button overlay */}
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="flex h-24 w-24 items-center justify-center rounded-full bg-red-400/80 backdrop-blur-sm transition-all duration-300 group-hover:scale-110 group-hover:bg-red-400 group-hover:shadow-[0_0_40px_rgba(239,68,68,0.8)]">
                         <Video className="h-12 w-12 text-white" />
                       </div>
                     </div>
-                    {/* Caption */}
                     <div className="absolute bottom-4 left-4 right-4 text-center">
                       <p className="font-semibold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                         Click to play your cinematic story
